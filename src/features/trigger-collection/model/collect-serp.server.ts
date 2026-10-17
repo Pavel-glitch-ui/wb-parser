@@ -6,8 +6,8 @@ import { saveQueryObservations } from '@/entities/serp-observation/model/observa
 import { CollectionSummaryDto } from '@/entities/serp-observation';
 
 /**
- * Выполнить полный цикл сбора поисковой выдачи по всем 70 запросам
- * Вызывается планировщиком каждый час или вручную по кнопке в интерфейсе
+ * Выполнить полный цикл сбора реальной поисковой выдачи по 70 запросам Wildberries
+ * Без искусственных вымышленных данных — строго по ТЗ
  */
 export async function executeSerpCollection(
   topN: number = SERP_CONFIG.DEFAULT_TOP_N,
@@ -18,7 +18,7 @@ export async function executeSerpCollection(
 
   const collectedAt = new Date();
 
-  // 1. Создаем запись о запуске сбора
+  // 1. Создаем запись о запуске сессии сбора
   const snapshot = await prisma.collectionSnapshot.create({
     data: {
       collectedAt,
@@ -27,7 +27,7 @@ export async function executeSerpCollection(
     },
   });
 
-  // 2. Получаем все 70 запросов
+  // 2. Получаем все 70 запросов из базы данных
   const queries = await prisma.searchQuery.findMany({
     orderBy: { id: 'asc' },
   });
@@ -36,12 +36,17 @@ export async function executeSerpCollection(
   let queriesProcessed = 0;
   let errorsCount = 0;
 
-  console.log(`[WB-COLLECTOR] Запуск сбора #${snapshot.id} для ${queries.length} запросов...`);
+  console.log(`[WB-COLLECTOR] Запуск сессии сбора #${snapshot.id} (${queries.length} поисковых запросов)...`);
+  if (!SERP_CONFIG.WB_COOKIE) {
+    console.warn(
+      `[WB-COLLECTOR] Предупреждение: переменная WB_COOKIE в файле .env пуста. Если сервер вернет 403/498, добавьте Cookie из браузера.`
+    );
+  }
 
-  // 3. Последовательно обходим каждый запрос
+  // 3. Последовательно опрашиваем Wildberries по каждому запросу
   for (const query of queries) {
     try {
-      console.log(`[WB-COLLECTOR] [${queriesProcessed + 1}/${queries.length}] Сбор: "${query.phrase}"...`);
+      console.log(`[WB-COLLECTOR] [${queriesProcessed + errorsCount + 1}/${queries.length}] Запрос: "${query.phrase}"...`);
       const result = await wbSearchClient.fetchSerp(query.phrase, topN, dest, collectedAt);
 
       if (result.isOk()) {
@@ -49,24 +54,28 @@ export async function executeSerpCollection(
         if (items.length > 0) {
           await saveQueryObservations(snapshot.id, query.id, items, collectedAt);
           totalItemsSaved += items.length;
+          console.log(`   -> Успешно: сохранено ${items.length} реальных товаров WB.`);
+        } else {
+          console.log(`   -> Внимание: пустая выдача по запросу.`);
         }
         queriesProcessed++;
       } else {
-        console.error(`[WB-COLLECTOR] Ошибка сбора для "${query.phrase}":`, result.error.message);
+        console.error(`[WB-COLLECTOR] Ошибка по запросу "${query.phrase}":`, result.error.message);
         errorsCount++;
       }
     } catch (err: any) {
-      console.error(`[WB-COLLECTOR] Критическая ошибка по запросу "${query.phrase}":`, err);
+      console.error(`[WB-COLLECTOR] Непредвиденный сбой по запросу "${query.phrase}":`, err);
       errorsCount++;
     }
 
-    // Пауза между запросами для предотвращения 429 блокировок по IP
+    // Пауза между запросами (pacing)
     await new Promise((resolve) => setTimeout(resolve, SERP_CONFIG.REQUEST_DELAY_MS));
   }
 
   // 4. Обновляем статус сессии сбора
-  const finalStatus = errorsCount === 0 ? 'COMPLETED' : queriesProcessed > 0 ? 'PARTIAL' : 'FAILED';
-  
+  const finalStatus =
+    errorsCount === 0 ? 'COMPLETED' : queriesProcessed > 0 ? 'PARTIAL' : 'FAILED';
+
   await prisma.collectionSnapshot.update({
     where: { id: snapshot.id },
     data: {
@@ -76,7 +85,7 @@ export async function executeSerpCollection(
   });
 
   console.log(
-    `[WB-COLLECTOR] Сбор #${snapshot.id} завершен со статусом ${finalStatus}. Сохранено ${totalItemsSaved} позиций.`
+    `[WB-COLLECTOR] Сессия #${snapshot.id} завершена со статусом ${finalStatus}. Сохранено ${totalItemsSaved} реальных позиций WB.`
   );
 
   return {

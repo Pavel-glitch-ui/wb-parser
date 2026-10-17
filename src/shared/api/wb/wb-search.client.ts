@@ -1,5 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
-import { ResultAsync, ok, err } from 'neverthrow';
+import { ResultAsync, okAsync, errAsync, ok, err } from 'neverthrow';
 import { SERP_CONFIG } from '../../config/serp.config';
 import { calculateDeliveryDays } from '../../lib/date/delivery-calculator';
 import {
@@ -34,75 +33,108 @@ export class WbParseError extends Error {
 
 export type WbClientError = WbNetworkError | WbHttpError | WbParseError;
 
-function mapAxiosError(e: unknown): WbClientError {
-  if (axios.isAxiosError(e)) {
-    const status = e.response?.status;
-    if (status) {
-      return new WbHttpError(status, `WB API HTTP ${status}: ${e.message}`);
+/**
+ * Выполнение HTTP GET запроса без браузера
+ * Аналог requests.get в Python (как в скрипте Тимура) через нативный fetch Node.js
+ */
+async function fetchWbJson(url: string, headers: Record<string, string>): Promise<unknown> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const fetchOptions: RequestInit = {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    };
+
+    // Чистый нативный fetch без тяжелых внешних зависимостей
+
+    const response = await fetch(url, fetchOptions);
+
+    if (!response.ok) {
+      throw new WbHttpError(
+        response.status,
+        `WB API вернул статус ${response.status} (${response.statusText || 'Error'})`
+      );
     }
-    return new WbNetworkError(`WB сетевая ошибка: ${e.message}`, e);
+
+    return await response.json();
+  } catch (err: unknown) {
+    if (err instanceof WbHttpError) {
+      throw err;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WbNetworkError(`Ошибка сети при запросе к WB: ${message}`, err);
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return new WbNetworkError(e instanceof Error ? e.message : String(e), e);
 }
 
 export class WbSearchClient {
-  private readonly http: AxiosInstance;
-
-  constructor() {
-    this.http = axios.create({
-      baseURL: SERP_CONFIG.WB_SEARCH_URL,
-      timeout: 10000,
-      proxy: false,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        Accept: '*/*',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        Referer: 'https://www.wildberries.ru/',
-        Origin: 'https://www.wildberries.ru',
-      },
-    });
-  }
-
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
-   * Запрос одной страницы поисковой выдачи WB с чистым ResultAsync (без try/catch и throw)
+   * Запрос одной страницы поисковой выдачи WB
+   * Параметры полностью согласованы с рабочим скриптом каталога WB:
+   * appType=1, dest=-1257786, locale=ru, sort=popular, spp=0
    */
   public fetchPage(
     query: string,
     page: number,
     dest: string = SERP_CONFIG.DEFAULT_DEST
   ): ResultAsync<WbProductItem[], WbClientError> {
+    const searchParams = new URLSearchParams({
+      appType: '1',
+      curr: SERP_CONFIG.CURRENCY,
+      dest,
+      locale: 'ru',
+      page: String(page),
+      query,
+      resultset: 'catalog',
+      sort: 'popular',
+      spp: '0',
+      suppressSpellcheck: 'false',
+    });
+
+    const url = `${SERP_CONFIG.WB_SEARCH_URL}?${searchParams.toString()}`;
+
+    // Заголовки как в скрипте Тимура + стандартный браузерный Accept
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0)',
+      Accept: '*/*',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+      Origin: 'https://www.wildberries.ru',
+      Referer: `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}`,
+    };
+
+    if (SERP_CONFIG.WB_COOKIE && SERP_CONFIG.WB_COOKIE.trim().length > 0) {
+      headers['Cookie'] = SERP_CONFIG.WB_COOKIE.trim();
+    }
+
     return ResultAsync.fromPromise(
-      this.http.get('', {
-        params: {
-          query,
-          resultset: 'catalog',
-          limit: SERP_CONFIG.PAGE_SIZE,
-          page,
-          dest,
-          curr: SERP_CONFIG.CURRENCY,
-          lang: 'ru',
-          suppressSpellcheck: 'false',
-        },
-      }),
-      mapAxiosError
-    ).andThen((response) => {
-      const parsed = WbSearchResponseSchema.safeParse(response.data);
+      fetchWbJson(url, headers),
+      (err): WbClientError => {
+        if (err instanceof WbHttpError || err instanceof WbNetworkError || err instanceof WbParseError) {
+          return err;
+        }
+        return new WbNetworkError(err instanceof Error ? err.message : String(err), err);
+      }
+    ).andThen((data): ResultAsync<WbProductItem[], WbClientError> => {
+      const parsed = WbSearchResponseSchema.safeParse(data);
       if (!parsed.success) {
-        return err(
-          new WbParseError(`Ошибка валидации ответа WB: ${parsed.error.message}`, parsed.error)
+        return errAsync(
+          new WbParseError(`Ошибка валидации схемы ответа WB: ${parsed.error.message}`, parsed.error)
         );
       }
-      return ok(parsed.data.data?.products ?? []);
+      return okAsync(parsed.data.data?.products ?? []);
     });
   }
 
   /**
-   * Сбор поисковой выдачи по запросу до глубины topN через идиоматичный neverthrow
+   * Сбор реальной поисковой выдачи по запросу до глубины topN
    */
   public fetchSerp(
     query: string,
@@ -134,22 +166,25 @@ export class WbSearchClient {
 
         return ok<WbProductItem[], WbClientError>(allRawProducts);
       })(),
-      (e) => (e instanceof Error ? new WbNetworkError(e.message, e) : new WbNetworkError(String(e)))
+      (e): WbClientError => (e instanceof Error ? new WbNetworkError(e.message, e) : new WbNetworkError(String(e)))
     ).andThen((wrappedResult) => {
       return wrappedResult.map((rawProducts) => {
         const sliced = rawProducts.slice(0, topN);
 
         const normalized: NormalizedSerpItem[] = sliced.map((item, index) => {
+          // Вычисление цены в рублях (аналогично логике парсера Тимура: sizes[0].price.product / 100)
           let price: number | null = null;
-          if (item.salePriceU != null && item.salePriceU > 0) {
+          if (item.sizes && item.sizes.length > 0 && item.sizes[0]?.price?.product != null) {
+            price = item.sizes[0].price.product / 100;
+          } else if (item.salePriceU != null && item.salePriceU > 0) {
             price = item.salePriceU / 100;
-          } else if (item.sizes && item.sizes.length > 0 && item.sizes[0]?.price?.total) {
+          } else if (item.sizes && item.sizes.length > 0 && item.sizes[0]?.price?.total != null) {
             price = item.sizes[0].price.total / 100;
           } else if (item.priceU != null && item.priceU > 0) {
             price = item.priceU / 100;
           }
 
-          const rating = item.rating ?? item.reviewRating ?? null;
+          const rating = item.reviewRating ?? item.rating ?? null;
           const feedbacks = item.feedbacks ?? null;
           const deliveryDays = calculateDeliveryDays(item.time1, collectionDate);
           const sellerName = item.supplier ?? item.brand ?? null;
