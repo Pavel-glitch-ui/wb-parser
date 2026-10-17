@@ -2,14 +2,22 @@ import { prisma, initializeSqliteWalMode } from '@/shared/db';
 import queriesData from '../../../../data/queries.json';
 import { SearchQueryDto } from './query.types';
 
+let isQueriesSeeded = false;
+
 /**
  * Инициализирует 70 запросов из queries.json в базе данных, если таблица пуста
+ * Выполняется один раз за время жизни сервера
  */
 export async function seedQueriesIfEmpty(): Promise<number> {
+  if (isQueriesSeeded) {
+    return 70;
+  }
+
   await initializeSqliteWalMode();
 
   const count = await prisma.searchQuery.count();
   if (count > 0) {
+    isQueriesSeeded = true;
     return count;
   }
 
@@ -22,6 +30,7 @@ export async function seedQueriesIfEmpty(): Promise<number> {
     data: dataToInsert,
   });
 
+  isQueriesSeeded = true;
   return dataToInsert.length;
 }
 

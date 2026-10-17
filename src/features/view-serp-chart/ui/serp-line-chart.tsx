@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -37,11 +37,21 @@ interface SerpLineChartProps {
   loading?: boolean;
 }
 
-export const SerpLineChart: React.FC<SerpLineChartProps> = ({
+export const SerpLineChart: React.FC<SerpLineChartProps> = React.memo(({
   data,
   selectedProducts,
   loading = false,
 }) => {
+  // Создаем словарь названий товаров для легенды и тултипа с мемоизацией
+  const productLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    selectedProducts.forEach((p) => {
+      const brand = p.brand ? `${p.brand} ` : '';
+      labels[p.nmId] = `ID ${p.nmId} (${brand})`;
+    });
+    return labels;
+  }, [selectedProducts]);
+
   if (data.length === 0 || selectedProducts.length === 0) {
     return (
       <Card
@@ -62,13 +72,6 @@ export const SerpLineChart: React.FC<SerpLineChartProps> = ({
       </Card>
     );
   }
-
-  // Создаем словарь названий товаров для легенды и тултипа
-  const productLabels: Record<string, string> = {};
-  selectedProducts.forEach((p) => {
-    const brand = p.brand ? `${p.brand} ` : '';
-    productLabels[p.nmId] = `ID ${p.nmId} (${brand})`;
-  });
 
   return (
     <Card
@@ -193,4 +196,6 @@ export const SerpLineChart: React.FC<SerpLineChartProps> = ({
       </div>
     </Card>
   );
-};
+});
+
+SerpLineChart.displayName = 'SerpLineChart';

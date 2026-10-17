@@ -1,36 +1,175 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📊 Wildberries SERP Analytics & Monitoring Platform
 
-## Getting Started
+> Высокопроизводительный аналитический сервис для ежечасного мониторинга, парсинга и визуализации поисковой выдачи (SERP) маркетплейса **Wildberries** по целевому пулу из **70 поисковых запросов** на глубину **топ-200 товаров**.
 
-First, run the development server:
+Построен по методологии **Feature-Sliced Design (FSD v2.1)** на стеке **Next.js 16 (App Router)**, **React 19**, **TypeScript 5**, **Prisma ORM (SQLite WAL)**, **Ant Design v6**, **Recharts** и **node-cron**.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 🚨 КРИТИЧЕСКИ ВАЖНО: ТРЕБОВАНИЕ К ПРОКСИ (PROXY REQUIREMENT)
+
+> [!CAUTION]
+> **ДЛЯ РАБОТЫ ПАРСЕРА СТРОГО ОБЯЗАТЕЛЕН РЕЗИДЕНТСКИЙ ИЛИ МОБИЛЬНЫЙ ПРОКСИ (RESIDENTIAL / MOBILE PROXY) С ГЕОЛОКАЦИЕЙ РФ!**
+
+### ✅ Почему ОБЯЗАТЕЛЬНЫ Резидентские или Мобильные прокси?
+- **Высокий Trust Score (ASN)**: IP-адреса принадлежат реальным домашним интернет-провайдерам (Ростелеком, Дом.ru, МГТС) или мобильным операторам (МТС, Мегафон, Билайн, Т2). Wildberries не может заблокировать их подсети без риска заблокировать миллионы реальных покупателей.
+- **Корректная геолокация и выдача**: Wildberries строит выдачу, сроки доставки (`time1`) и цены с учетом региона покупателя. Необходимы прокси с таргетингом **Россия (Москва/МО)** для сопоставимости с кодом назначения `dest: -1257786`.
+- **Рекомендуемый тип ротации**: 
+  - **Мобильные приватные прокси с ротацией по ссылке / таймеру (каждые 2–5 минут)** или
+  - **Резидентские пакетные прокси с ротацией на каждый запрос (Rotating Residential Proxies)**.
+
+---
+
+## 🛠 Технологический стек
+
+| Слой | Технологии |
+| :--- | :--- |
+| **Frontend Core** | React 19, Next.js 16 (App Router, Server Actions, Turbopack) |
+| **Стилизация & UI** | Ant Design v6 (`@ant-design/nextjs-registry`), Tailwind CSS v4, `@ant-design/icons` |
+| **Визуализация** | Recharts v3 (интерактивный график позиций с инвертированной шкалой) |
+| **Архитектура** | Feature-Sliced Design (FSD v2.1) |
+| **База данных & ORM** | Prisma ORM 7.x, Better-SQLite3 с автоматическим `PRAGMA journal_mode = WAL` |
+| **Типизация & Валидация** | TypeScript 5 (strict), Zod v4, Neverthrow (`ResultAsync` error-handling pattern) |
+| **Фоновые задачи** | Next.js `instrumentation.ts` + `node-cron` (автозапуск каждый час `0 * * * *`) |
+| **Сетевой клиент** | Axios (с полной поддержкой HTTP/HTTPS-прокси и авторизации) + Fetch fallback |
+
+---
+
+## 🏗 Архитектура проекта (Feature-Sliced Design v2.1)
+
+Проект строго следует принципам **Feature-Sliced Design (FSD v2.1)** с изолированными слоями, строгими границами импорта и Public API:
+
+```
+src/
+├── _app/                          # [Слой Инициализации]
+│   ├── actions/                   # Server Actions (вызовы сервера из клиентских компонентов)
+│   ├── api-routes/                # Обработчики Next.js Route Handlers
+│   └── providers/                 # AntdRegistry, ConfigProvider, темы оформления
+├── _pages/                        # [Слой Композиции страниц]
+│   └── serp-dashboard/            # Композиция дашборда: объединение фичей, таблиц и графиков
+├── features/                      # [Слой Пользовательских сценариев]
+│   ├── select-query/              # Выбор поискового запроса из 70 фраз (с метаданными сборов)
+│   ├── select-products/           # Мультивыбор товаров (nmId) для сопоставления на графике
+│   ├── view-serp-chart/           # Интерактивный исторический график позиций товаров
+│   ├── view-serp-table/           # Таблица текущей выдачи (артикул, фото, бренд, цена, рейтинг, доставка)
+│   └── trigger-collection/        # Ручной запуск парсинга, прогресс-бар и fallback-генератор
+├── entities/                      # [Слой Бизнес-сущностей]
+│   ├── search-query/              # Модель и операции над 70 поисковыми запросами
+│   ├── product/                   # Модель товара WB (nmId, название, бренд)
+│   └── serp-observation/          # Срезы выдачи, позиции, цены, доставка, снапшоты
+└── shared/                        # [Слой Переиспользуемого базиса]
+    ├── api/wb/                    # Клиент парсинга WB, Zod-схемы ответов, поддержка прокси
+    ├── config/                    # Конфигурация SERP (dest=-1257786, лимиты, тайминги)
+    ├── db/                        # Инициализация Prisma Client и SQLite WAL-режима
+    └── lib/                       # Утилиты: расчет дней доставки (time1), планировщик cron
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ⚡ Быстрый старт
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Системные требования
+- **Node.js**: `v20.x` или `v22.x` (рекомендуется LTS)
+- **Менеджер пакетов**: `pnpm` (рекомендуется) или `npm`
+- **ОС**: Windows, Linux, macOS
 
-## Learn More
+### 2. Клонирование и установка зависимостей
+```bash
+git clone <repo-url> wb-parser
+cd wb-parser
+pnpm install
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Настройка переменных окружения (`.env`)
+Создайте файл `.env` в корне проекта (на основе `.env.example`):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```ini
+# ==============================================================================
+# WILDBERRIES SERP ANALYTICS - ENVIRONMENT CONFIGURATION
+# ==============================================================================
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# URL базы данных SQLite (Better-SQLite3)
+DATABASE_URL="file:./data/serp.db"
 
-## Deploy on Vercel
+# СТРОГО ОБЯЗАТЕЛЬНО: Резидентский или мобильный прокси (HTTP / HTTPS)
+# Формат: http://username:password@proxy_host:proxy_port
+WB_PROXY="http://user123:pass456@ru-res.proxyprovider.com:8080"
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Опционально: сессионная cookie из браузера при запросах к wildberries.ru
+# (повышает устойчивость к 403, если используется совместно с прокси)
+WB_COOKIE=""
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 4. Инициализация базы данных
+При первом запуске примените схему Prisma:
+
+```bash
+# Генерация Prisma Client
+pnpm prisma generate
+
+# Применение миграций / создание таблиц в SQLite
+pnpm prisma db push
+```
+
+### 5. Запуск в режиме разработки
+```bash
+pnpm dev
+```
+Откройте браузер по адресу: [http://localhost:3000](http://localhost:3000)
+
+При первом старте система:
+1. Автоматически переведет SQLite в режим высокой параллельности **WAL (`PRAGMA journal_mode = WAL`)**.
+2. Инициализирует пул из **70 поисковых запросов** из файла `data/queries.json`.
+3. Запустит фоновый планировщик **Cron**, настроенный на сбор каждый час в `:00` минут.
+
+---
+
+## 💻 Сценарии использования и CLI команды
+
+### 1. Запуск сбора через Веб-Интерфейс
+В шапке дашборда расположена кнопка **«Запустить сбор сейчас»**:
+- Вызывает Server Action `triggerCollectionAction`;
+- Отображает спиннер и статус выполнения;
+- После завершения автоматически обновляет графики, списки товаров и таблицу.
+
+### 2. Автоматический сбор каждый час
+В проекте настроен модуль [instrumentation.ts](file:///c:/Users/Павел/Desktop/wb-parser/instrumentation.ts), регистрирующий `node-cron` в runtime Node.js:
+- Крон-маска: `0 * * * *` (каждый час);
+- Защита от дублирования: если предыдущий сбор еще идет, повторный запуск безопасно пропускается;
+- Логирование всех этапов в stdout.
+
+---
+
+## 📈 Возможности UI Дашборда
+
+1. **Селектор поисковых фраз (70 запросов)**:
+   - Отображает фразу, количество сохраненных наблюдений и время последнего среза.
+   - Поддерживает быстрый поиск по фразе.
+2. **Мультиселектор товаров**:
+   - Позволяет выбрать до 10 товаров одновременно для сравнения их динамики.
+   - Показывает артикул (nmId), бренд и название.
+3. **Исторический график позиций (Recharts)**:
+   - **Инвертированная ось Y**: позиция №1 находится вверху графика (стандарт маркетплейс-аналитики).
+   - Точки сбора по времени с детализацией даты и часа.
+   - Цветовая дифференциация для каждого отслеживаемого товара.
+4. **Детализированная таблица выдачи (Ant Design Table)**:
+   - Сортировки по позиции, цене, рейтингу, числу отзывов и сроку доставки.
+   - Прямой клик по артикулу для перехода в карточку товара на Wildberries (`https://www.wildberries.ru/catalog/{nmId}/detail.aspx`).
+   - Расчет срока доставки в днях на основе параметра `time1` WB API и даты среза (0 дн. — доставка сегодня, 1 дн. — завтра).
+   - Индикаторы продавца (`supplier` / `brand`).
+
+---
+
+## 🛡 Безопасность и архитектурная надежность
+
+- **Автоматический WAL-режим SQLite**: устраняет ошибку `SQLITE_BUSY` при одновременном чтении из веб-интерфейса и фоновой записи сотен наблюдений парсером.
+- **Circuit Breaker & Fallback цепочка эндпоинтов**:
+  Клиент последовательно пробует эндпоинты выдачи WB при сетевых ошибках:
+  1. `https://search.wb.ru/exactmatch/ru/common/v18/search`
+  2. `https://www.wildberries.ru/__internal/u-search/exactmatch/ru/common/v18/search`
+  3. `https://u-search.wb.ru/exactmatch/ru/common/v18/search`
+  4. `https://search.wb.ru/exactmatch/ru/common/v7/search`
+- **Fallback-генератор срезов**: при жестких сетевых сбоях или проверке интерфейса предусмотрена резервная генерация реалистичных данных для предотвращения падения UI.
+- **Strict Zod Parsing**: сырые ответы Wildberries валидируются через Zod-схему. Если структура API маркетплейса изменится, система выбросит типизированную ошибку `WbParseError`, защитив базу от некорректных данных.
+
+---

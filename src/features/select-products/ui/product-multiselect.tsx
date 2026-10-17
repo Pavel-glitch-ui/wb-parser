@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Select, Space, Button, Tag } from 'antd';
+import React, { useMemo, useCallback } from 'react';
+import { Select, Space, Button } from 'antd';
 import { ProductDto } from '@/entities/product';
 
 interface ProductMultiselectProps {
@@ -11,20 +11,37 @@ interface ProductMultiselectProps {
   loading?: boolean;
 }
 
-export const ProductMultiselect: React.FC<ProductMultiselectProps> = ({
+export const ProductMultiselect: React.FC<ProductMultiselectProps> = React.memo(({
   products,
   selectedNmIds,
   onChange,
   loading = false,
 }) => {
-  const handleSelectTop = (count: number) => {
-    const topIds = products.slice(0, count).map((p) => p.nmId);
-    onChange(topIds);
-  };
+  const handleSelectTop = useCallback(
+    (count: number) => {
+      const topIds = products.slice(0, count).map((p) => p.nmId);
+      onChange(topIds);
+    },
+    [products, onChange]
+  );
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     onChange([]);
-  };
+  }, [onChange]);
+
+  const options = useMemo(
+    () =>
+      products.map((p) => {
+        const brandText = p.brand ? `[${p.brand}] ` : '';
+        const nameText = p.name ? `${p.name.slice(0, 35)}... ` : '';
+        const posText = p.bestPosition ? ` (ТОП: #${p.bestPosition})` : '';
+        return {
+          value: p.nmId,
+          label: `${p.nmId} - ${brandText}${nameText}${posText}`,
+        };
+      }),
+    [products]
+  );
 
   return (
     <div style={{ width: '100%' }}>
@@ -74,16 +91,11 @@ export const ProductMultiselect: React.FC<ProductMultiselectProps> = ({
         onChange={onChange}
         maxTagCount="responsive"
         optionFilterProp="label"
-        options={products.map((p) => {
-          const brandText = p.brand ? `[${p.brand}] ` : '';
-          const nameText = p.name ? `${p.name.slice(0, 35)}... ` : '';
-          const posText = p.bestPosition ? ` (ТОП: #${p.bestPosition})` : '';
-          return {
-            value: p.nmId,
-            label: `${p.nmId} - ${brandText}${nameText}${posText}`,
-          };
-        })}
+        options={options}
       />
     </div>
   );
-};
+});
+
+ProductMultiselect.displayName = 'ProductMultiselect';
+

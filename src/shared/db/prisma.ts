@@ -19,14 +19,20 @@ export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
+let isWalInitialized = false;
+
 /**
  * Инициализация WAL-режима для SQLite для параллельного чтения и записи
+ * Выполняется ровно один раз за время жизни процесса
  */
 export async function initializeSqliteWalMode(): Promise<void> {
+  if (isWalInitialized) return;
+
   try {
     await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
     await prisma.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
     await prisma.$queryRawUnsafe('PRAGMA synchronous = NORMAL;');
+    isWalInitialized = true;
   } catch (error) {
     console.error('Ошибка инициализации SQLite WAL mode:', error);
   }

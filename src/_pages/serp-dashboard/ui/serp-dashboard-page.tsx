@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useTransition } from 'react';
-import { Row, Col, Card, Typography, Spin, Badge, Space } from 'antd';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Row, Col, Card, Typography, Badge, Space } from 'antd';
 import { QuerySelect } from '@/features/select-query';
 import { ProductMultiselect } from '@/features/select-products';
 import { SerpLineChart } from '@/features/view-serp-chart';
@@ -35,24 +35,22 @@ export const SerpDashboardPage: React.FC = () => {
   const [loadingTable, setLoadingTable] = useState(false);
 
   // 1. Загрузка списка запросов при монтировании
-  const loadQueries = async () => {
+  const loadQueries = useCallback(async () => {
     setLoadingQueries(true);
     try {
       const list = await fetchQueriesAction();
       setQueries(list);
-      if (list.length > 0 && selectedQueryId === null) {
-        setSelectedQueryId(list[0].id);
-      }
+      setSelectedQueryId((prev) => (prev === null && list.length > 0 ? list[0].id : prev));
     } catch (e) {
       console.error('Ошибка загрузки запросов:', e);
     } finally {
       setLoadingQueries(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadQueries();
-  }, []);
+  }, [loadQueries]);
 
   // 2. При смене поискового запроса: загружаем товары и таблицу
   useEffect(() => {
@@ -132,8 +130,16 @@ export const SerpDashboardPage: React.FC = () => {
     };
   }, [selectedQueryId, selectedNmIds]);
 
-  // Колбэк после завершения ручного или периодического сбора
-  const handleCollectionCompleted = async () => {
+  // Стабильные мемоизированные колбэки для дочерних React.memo компонентов
+  const handleQueryChange = useCallback((id: number) => {
+    setSelectedQueryId(id);
+  }, []);
+
+  const handleProductsChange = useCallback((ids: string[]) => {
+    setSelectedNmIds(ids);
+  }, []);
+
+  const handleCollectionCompleted = useCallback(async () => {
     await loadQueries();
     if (selectedQueryId) {
       const [prods, tableItems] = await Promise.all([
@@ -148,10 +154,17 @@ export const SerpDashboardPage: React.FC = () => {
         setChartData(points);
       }
     }
-  };
+  }, [loadQueries, selectedQueryId, selectedNmIds]);
 
-  const selectedQuery = queries.find((q) => q.id === selectedQueryId);
-  const activeProducts = products.filter((p) => selectedNmIds.includes(p.nmId));
+  const selectedQuery = useMemo(
+    () => queries.find((q) => q.id === selectedQueryId),
+    [queries, selectedQueryId]
+  );
+
+  const activeProducts = useMemo(() => {
+    const set = new Set(selectedNmIds);
+    return products.filter((p) => set.has(p.nmId));
+  }, [products, selectedNmIds]);
 
   return (
     <div
@@ -206,7 +219,7 @@ export const SerpDashboardPage: React.FC = () => {
             <QuerySelect
               queries={queries}
               selectedQueryId={selectedQueryId}
-              onChange={(id) => setSelectedQueryId(id)}
+              onChange={handleQueryChange}
               loading={loadingQueries}
             />
           </Col>
@@ -214,7 +227,7 @@ export const SerpDashboardPage: React.FC = () => {
             <ProductMultiselect
               products={products}
               selectedNmIds={selectedNmIds}
-              onChange={(ids) => setSelectedNmIds(ids)}
+              onChange={handleProductsChange}
               loading={loadingProducts}
             />
           </Col>

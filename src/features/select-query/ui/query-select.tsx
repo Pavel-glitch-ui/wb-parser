@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Select } from 'antd';
 import { SearchQueryDto } from '@/entities/search-query';
 
@@ -11,12 +11,21 @@ interface QuerySelectProps {
   loading?: boolean;
 }
 
-export const QuerySelect: React.FC<QuerySelectProps> = ({
+export const QuerySelect: React.FC<QuerySelectProps> = React.memo(({
   queries,
   selectedQueryId,
   onChange,
   loading = false,
 }) => {
+  const options = useMemo(
+    () =>
+      queries.map((q) => ({
+        value: q.id,
+        label: `${q.phrase} ${q.lastCollectedAt ? `(сборов: ${q.observationsCount})` : '(еще не собирался)'}`,
+      })),
+    [queries]
+  );
+
   return (
     <div style={{ width: '100%' }}>
       <label
@@ -39,11 +48,11 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         loading={loading}
         value={selectedQueryId ?? undefined}
         onChange={onChange}
-        options={queries.map((q) => ({
-          value: q.id,
-          label: `${q.phrase} ${q.lastCollectedAt ? `(сборов: ${q.observationsCount})` : '(еще не собирался)'}`,
-        }))}
+        options={options}
       />
     </div>
   );
-};
+});
+
+QuerySelect.displayName = 'QuerySelect';
+

@@ -142,22 +142,15 @@ export async function saveQueryObservations(
 ): Promise<void> {
   await initializeSqliteWalMode();
 
-  // 1. Апсерт товаров в справочник products (чтобы сохранить название и бренд)
-  for (const item of items) {
-    await prisma.product.upsert({
-      where: { nmId: item.nmId },
-      update: {
-        name: item.name ?? undefined,
-        brand: item.brand ?? undefined,
-      },
-      create: {
-        nmId: item.nmId,
-        name: item.name,
-        brand: item.brand,
-        firstSeenAt: collectedAt,
-      },
-    });
-  }
+  // 1. Пакетная вставка новых товаров (1 быстрый SQL запрос вместо 200 синхронных upsert)
+  await prisma.product.createMany({
+    data: items.map((item) => ({
+      nmId: item.nmId,
+      name: item.name,
+      brand: item.brand,
+      firstSeenAt: collectedAt,
+    })),
+  });
 
   // 2. Создаем записи наблюдений
   const observationsData = items.map((item) => ({
