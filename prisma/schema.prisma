@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// 70 поисковых запросов из ТЗ
+model SearchQuery {
+  id           Int               @id @default(autoincrement())
+  phrase       String            @unique
+  createdAt    DateTime          @default(now())
+  observations SerpObservation[]
+
+  @@map("search_queries")
+}
+
+// Уникальные товары (артикулы WB), найденные в выдаче
+model Product {
+  nmId         BigInt            @id
+  name         String?
+  brand        String?
+  firstSeenAt  DateTime          @default(now())
+  observations SerpObservation[]
+
+  @@map("products")
+}
+
+// Сессии сбора (каждый час)
+model CollectionSnapshot {
+  id           Int               @id @default(autoincrement())
+  collectedAt  DateTime          @default(now())
+  status       String            @default("COMPLETED")
+  itemsCount   Int               @default(0)
+  observations SerpObservation[]
+
+  @@map("collection_snapshots")
+}
+
+// История позиций товаров по запросам
+model SerpObservation {
+  id           Int      @id @default(autoincrement())
+  snapshotId   Int
+  queryId      Int
+  nmId         BigInt
+  position     Int // 1..top_n
+  price        Float? // Цена покупателя в рублях
+  rating       Float? // Рейтинг
+  feedbacks    Int? // Количество отзывов
+  deliveryDays Int? // Срок доставки в календарных днях (0 - сегодня, 1 - завтра)
+  sellerName   String? // Название продавца (supplier)
+  collectedAt  DateTime @default(now())
+
+  snapshot CollectionSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  query    SearchQuery        @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  product  Product            @relation(fields: [nmId], references: [nmId], onDelete: Cascade)
+
+  @@index([queryId, nmId, collectedAt])
+  @@index([queryId, collectedAt])
+  @@index([nmId])
+  @@map("serp_observations")
+}
