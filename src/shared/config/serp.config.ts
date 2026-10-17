@@ -7,8 +7,13 @@ export const SERP_CONFIG = {
   PAGE_SIZE: 100,
   /** Гео-код Москвы для сопоставимости цен и доставки по ТЗ */
   DEFAULT_DEST: '-1257786',
-  /** Эндпоинт поисковой выдачи Wildberries */
-  WB_SEARCH_URL: 'https://search.wb.ru/exactmatch/ru/common/v9/search',
+  /** Эндпоинты поисковой выдачи Wildberries (актуальная версия v18 с fallback цепочкой) */
+  WB_SEARCH_URL: 'https://search.wb.ru/exactmatch/ru/common/v18/search',
+  WB_SEARCH_FALLBACK_URLS: [
+    'https://www.wildberries.ru/__internal/u-search/exactmatch/ru/common/v18/search',
+    'https://u-search.wb.ru/exactmatch/ru/common/v18/search',
+    'https://search.wb.ru/exactmatch/ru/common/v7/search',
+  ],
   /** Валюта */
   CURRENCY: 'rub',
   /** Пауза между страницами/запросами для аккуратного пейсинга (мс) */

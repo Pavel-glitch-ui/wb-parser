@@ -99,15 +99,18 @@ export class WbSearchClient {
       suppressSpellcheck: 'false',
     });
 
-    const url = `${SERP_CONFIG.WB_SEARCH_URL}?${searchParams.toString()}`;
+    const candidateUrls = [
+      SERP_CONFIG.WB_SEARCH_URL,
+      ...SERP_CONFIG.WB_SEARCH_FALLBACK_URLS,
+    ];
 
-    // Заголовки как в скрипте Тимура + стандартный браузерный Accept
     const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0)',
       Accept: '*/*',
       'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
       Origin: 'https://www.wildberries.ru',
       Referer: `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}`,
+      'x-requested-with': 'XMLHttpRequest',
     };
 
     if (SERP_CONFIG.WB_COOKIE && SERP_CONFIG.WB_COOKIE.trim().length > 0) {
@@ -115,7 +118,23 @@ export class WbSearchClient {
     }
 
     return ResultAsync.fromPromise(
-      fetchWbJson(url, headers),
+      (async () => {
+        let lastError: Error | null = null;
+
+        for (const baseUrl of candidateUrls) {
+          const url = `${baseUrl}?${searchParams.toString()}`;
+          try {
+            const data = await fetchWbJson(url, headers);
+            return data;
+          } catch (err: unknown) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+            // Если ошибка 403 / 498, пробуем следующий эндпоинт из цепочки
+            continue;
+          }
+        }
+
+        throw lastError || new Error('Все эндпоинты WB вернули ошибку');
+      })(),
       (err): WbClientError => {
         if (err instanceof WbHttpError || err instanceof WbNetworkError || err instanceof WbParseError) {
           return err;
